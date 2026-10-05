@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desk Notes</title>
+<style>
+  :root {
+    --glass: rgba(18, 20, 30, .62);
+    --glass2: rgba(255, 255, 255, .06);
+    --line: rgba(255, 255, 255, .12);
+    --text: #eef0f6;
+    --muted: #9aa1b3;
+    --accent: #8ab4ff;
+    --ok: #7ee2a8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); user-select: none;
+    background: #0d1020;
+  }
+  #bg { position: fixed; inset: 0; background-size: cover; background-position: center;
+    background-image:
+      radial-gradient(900px 600px at 15% 20%, #3b2a6b 0%, transparent 60%),
+      radial-gradient(800px 700px at 85% 80%, #1f4f6b 0%, transparent 60%),
+      radial-gradient(700px 500px at 60% 10%, #4b2148 0%, transparent 60%),
+      linear-gradient(160deg, #0d1020, #121a2e);
+    animation: drift 40s ease-in-out infinite alternate; background-repeat: no-repeat; }
+  #bg.img { animation: none; }
+  @keyframes drift { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(35deg); } }
+  #dim { position: fixed; inset: 0; background: #000; opacity: .25; pointer-events: none; }
+  #board { position: fixed; inset: 0; }
+
+  /* clock widget */
+  .clock { box-shadow: none; text-shadow: 0 2px 20px rgba(0,0,0,.5); border: 1px solid transparent; transition: background .2s, border-color .2s; }
+  .clock:hover, .clock.drag { background: var(--glass); border-color: var(--line); }
+  .clock .bar { opacity: 0; transition: opacity .2s; }
+  .clock:hover .bar { opacity: 1; }
+  .clock .body { padding: 0 18px 16px; }
+  .clock .t { font-size: 92px; font-weight: 200; letter-spacing: -2px; line-height: 1; }
+  .clock .t small { font-size: 32px; opacity: .5; letter-spacing: 0; margin-left: 4px; }
+  .clock .d { font-size: 20px; color: #d6dae6; margin-top: 6px; font-weight: 300; }
+  .nx { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15); }
+  .nx .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); }
+  .nx .cd { font-size: 30px; font-weight: 300; margin: 2px 0; color: #ffd28a; }
+  .nx .what { font-size: 16px; }
+  .nx .when { font-size: 13px; color: var(--muted); }
+  .nx .more { margin-top: 10px; font-size: 13px; color: #c3c8d6; }
+  .nx .more div { padding: 2px 0; }
+  .nx .more b { font-weight: 400; color: var(--muted); display: inline-block; min-width: 92px; }
+  .nx .empty { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+  /* widgets */
+  .w { position: absolute; border-radius: 14px; display: flex; flex-direction: column; transform-origin: 0 0;
+    box-shadow: 0 10px 40px rgba(0,0,0,.35); min-width: 180px; }
+  .sc { display: none; font-size: 13px; padding: 2px 6px; }
+  .w:hover .sc { display: inline-block; }
+  .spacer { flex: 1; }
+  .w.drag { box-shadow: 0 20px 60px rgba(0,0,0,.5); opacity: .95; }
+  .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: grab; flex: none; }
+  .w.drag .bar { cursor: grabbing; }
+  .grip { opacity: .45; font-size: 14px; }
+  .ib { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; border-radius: 6px;
+    padding: 2px 7px; opacity: .55; font-size: 16px; line-height: 1; }
+  .ib:hover { opacity: 1; background: rgba(127,127,127,.18); }
+  .del.arm { opacity: 1; background: #e5484d; color: #fff; font-size: 12px; padding: 4px 8px; }
+  .rs { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgba(127,127,127,.45) 50%); border-bottom-right-radius: 14px; }
+
+  .panel { background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(18px); }
+  .panel .body { padding: 4px 14px 14px; overflow: auto; flex: 1; }
+  .body::-webkit-scrollbar { width: 6px; }
+  .body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 3px; }
+
+  input, textarea { font: inherit; color: inherit; background: none; border: 0; outline: none; width: 100%; user-select: text; }
+  input::placeholder, textarea::placeholder { color: inherit; opacity: .4; }
+
+  /* sticky note */
+  .note { background: var(--nc, #ffe58a); color: #2b2620; border-radius: 4px 4px 16px 4px; }
+  .note .bar { padding: 6px 8px 2px; }
+  .note textarea { flex: 1; resize: none; padding: 4px 14px 16px; font-family: "Segoe Print", "Comic Sans MS", cursive;
+    font-size: 15px; line-height: 1.55; }
+  .dots { display: flex; gap: 5px; opacity: 0; transition: opacity .2s; }
+  .note:hover .dots { opacity: 1; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.25); cursor: pointer; }
+  .note .rs { border-bottom-right-radius: 16px; }
+
+  /* checklist */
+  .title { font-weight: 600; font-size: 15px; }
+  .cnt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .prog { height: 3px; background: rgba(255,255,255,.1); border-radius: 2px; margin: 2px 0 8px; overflow: hidden; }
+  .prog i { display: block; height: 100%; background: var(--ok); transition: width .3s; }
+  .items { list-style: none; margin: 0; padding: 0; }
+  .items li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .items li .x { opacity: 0; font-size: 14px; }
+  .items li:hover .x { opacity: .5; }
+  .items li:hover .x:hover { opacity: 1; }
+  .cb { flex: none; width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid rgba(255,255,255,.4); cursor: pointer;
+    display: grid; place-items: center; font-size: 12px; }
+  .done .cb { background: var(--ok); border-color: var(--ok); color: #10241a; }
+  .done .cb::after { content: "✓"; font-weight: 700; }
+  .done input { text-decoration: line-through; opacity: .45; }
+  .add { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; padding: 6px 0 0; }
+  .add:hover { color: var(--text); }
+
+  /* calendar */
+  .ttl { font-weight: 600; font-size: 15px; }
+  .mhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 15px; }
+  .mhead span { font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 13px; }
+  .wd { color: var(--muted); font-size: 11px; padding: 4px 0; }
+  .day { position: relative; padding: 7px 0; border-radius: 8px; cursor: pointer; }
+  .day:hover { background: var(--glass2); }
+  .day.out { opacity: .35; }
+  .day.today { color: var(--accent); font-weight: 700; }
+  .day.sel { background: var(--accent); color: #0d1020; font-weight: 700; }
+  .day.has::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px;
+    border-radius: 50%; background: #ffb86b; }
+  .day.alldone::after { background: var(--ok); }
+  .day.sel::after { background: #0d1020; }
+  .dlabel { margin: 12px 0 4px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+
+  /* toolbar */
+  #tb { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 4px; padding: 6px;
+    border-radius: 14px; opacity: .35; transition: opacity .25s; z-index: 100000; }
+  #tb:hover { opacity: 1; }
+  #tb button { background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; cursor: pointer; }
+  #tb button:hover { background: rgba(255,255,255,.1); }
+  #tb button.on { background: rgba(138,180,255,.22); }
+
+  /* on-screen keyboard */
+  #osk { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); padding: 10px; border-radius: 16px;
+    z-index: 100001; display: none; }
+  #osk.show { display: block; }
+  .krow { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; }
+  .krow:last-child { margin-bottom: 0; }
+  .k { min-width: 40px; height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: rgba(255,255,255,.07); color: var(--text); font: inherit; font-size: 16px; cursor: pointer; }
+  .k:hover { background: rgba(255,255,255,.14); }
+  .k:active { background: var(--accent); color: #0d1020; }
+  .k.wide { min-width: 64px; font-size: 14px; }
+  .k.on { background: rgba(138,180,255,.3); }
+  .k.space { min-width: 280px; }
+
+  /* event time chip + picker */
+  .tchip { flex: none; background: rgba(255,255,255,.07); border: 1px solid var(--line); color: var(--muted); font: inherit;
+    font-size: 12px; border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+  .tchip.set { color: #ffd28a; border-color: rgba(255,210,138,.4); }
+  .tchip:hover { background: rgba(255,255,255,.14); }
+  #pop { position: fixed; z-index: 100002; padding: 12px; border-radius: 14px; display: none; width: 270px; }
+  #pop.show { display: block; }
+  #pop .lbl { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  #pop .g { display: grid; gap: 4px; margin-bottom: 10px; }
+  #pop .g button { background: rgba(255,255,255,.06); border: 1px solid var(--line); color: var(--text); font: inherit;
+    font-size: 13px; padding: 5px 0; border-radius: 7px; cursor: pointer; }
+  #pop .g button:hover { background: rgba(255,255,255,.14); }
+  #pop .g button.on { background: var(--accent); color: #0d1020; border-color: var(--accent); }
+  #pop .row { display: flex; gap: 6px; }
+  #pop .row button { flex: 1; background: rgba(255,255,255,.08); border: 0; color: var(--text); font: inherit; font-size: 13px;
+    padding: 7px; border-radius: 8px; cursor: pointer; }
+  #pop .row button:last-child { background: var(--accent); color: #0d1020; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<div id="dim"></div>
+<div id="board"></div>
+<div id="pop" class="panel"></div>
+<div id="tb" class="panel"></div>
+<div id="osk" class="panel"></div>
+
+<script>
+const KEY = 'desknotes.v1';
+const COLORS = ['#ffe58a', '#ffb3c7', '#b8f0b0', '#a8d8ff', '#d6c1ff', '#ffc999'];
+const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const WDS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const WD_FULL = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
+
+const $ = s => document.querySelector(s);
+const board = $('#board'), osk = $('#osk'), tb = $('#tb');
+const uid = () => Math.random().toString(36).slice(2, 10);
+const pad = n => String(n).padStart(2, '0');
+const dkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in props) {
+    const v = props[k];
+    if (k === 'class') e.className = v;
+    else if (k === 'style') Object.assign(e.style, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k in e) e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+
+/* ---------- state ---------- */
+function defaults() {
+  const W = Math.max(innerWidth || 0, 1280);
+  return {
+    z: 10, osk: true, sel: dkey(new Date()), events: {},
+    widgets: [
+      { id: uid(), type: 'clock', x: 40, y: 30, w: 380, z: 4 },
+      { id: uid(), type: 'cal', x: W - 400, y: 40, w: 350, z: 3 },
+      { id: uid(), type: 'list', x: W - 400, y: 520, w: 350, title: 'Дела', z: 2, items: [
+        { id: uid(), text: 'Поставить обои', done: true },
+        { id: uid(), text: 'Добавить свой листик', done: false } ] },
+      { id: uid(), type: 'note', x: 60, y: 380, w: 260, h: 230, color: COLORS[0], z: 1,
+        text: 'Привет! Это листик.\nТащи за верхнюю полоску, угол справа снизу — размер.' }
+    ]
+  };
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.widgets)) {
+      // v1 had a fixed clock; turn it into a widget once
+      if (!s.clockWidget) { s.clockWidget = true; if (!s.widgets.some(w => w.type === 'clock')) s.widgets.push({ id: uid(), type: 'clock', x: 40, y: 30, w: 380, z: (s.z = (s.z || 10) + 1) }); }
+      return Object.assign(defaults(), s);
+    }
+  } catch (e) {}
+  return Object.assign(defaults(), { clockWidget: true });
+}
+let state = load();
+let saveT;
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(saveNow, 250);
+}
+function saveNow() {
+  for (const k in state.events) if (!state.events[k].length && k !== state.sel) delete state.events[k];
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+}
+addEventListener('beforeunload', saveNow);
+
+/* ---------- widgets ---------- */
+let G = 1; // global UI scale from Wallpaper Engine settings
+const S = w => (w.s || 1) * G;
+function place(el, w) {
+  // keep on screen without touching saved coords (window may be 0x0 during startup)
+  const ok = innerWidth > 300 && innerHeight > 200;
+  el.style.transform = 'scale(' + S(w) + ')';
+  el.style.left = (ok ? clamp(w.x, 0, Math.max(0, innerWidth - w.w * S(w))) : w.x) + 'px';
+  el.style.top = (ok ? clamp(w.y, 0, Math.max(0, innerHeight - 60)) : w.y) + 'px';
+  el.style.width = w.w + 'px';
+  if (w.h) el.style.height = w.h + 'px';
+  el.style.zIndex = w.z || 1;
+}
+function front(w, el) {
+  if (w.z === state.z) return;
+  w.z = ++state.z; el.style.zIndex = w.z; save();
+}
+function startDrag(e, w, el, mode) {
+  e.preventDefault();
+  const sx = e.clientX, sy = e.clientY, ox = el.offsetLeft, oy = el.offsetTop, ow = el.offsetWidth, oh = el.offsetHeight;
+  el.classList.add('drag');
+  const mv = ev => {
+    const dx = ev.clientX - sx, dy = ev.clientY - sy;
+    if (mode === 'resize') { w.w = Math.max(180, ow + dx / S(w)); w.h = Math.max(110, oh + dy / S(w)); }
+    else { w.x = clamp(ox + dx, 0, innerWidth - el.offsetWidth * S(w)); w.y = clamp(oy + dy, 0, innerHeight - 40); }
+    place(el, w);
+  };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); el.classList.remove('drag'); save(); };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+}
+function frame(w, cls, barKids, body, resizable) {
+  const del = h('button', { class: 'ib del', title: 'Удалить', onclick: () => {
+    if (del.classList.contains('arm')) return removeWidget(w);
+    del.classList.add('arm'); del.textContent = 'удалить?';
+    setTimeout(() => { del.classList.remove('arm'); del.textContent = '×'; }, 2500);
+  } }, '×');
+  const zoom = d => () => { w.s = Math.round(clamp((w.s || 1) + d, .5, 2.5) * 10) / 10; place(el, w); save(); };
+  const bar = h('div', { class: 'bar' }, h('span', { class: 'grip' }, '⠿'), barKids, h('span', { class: 'spacer' }),
+    h('button', { class: 'ib sc', title: 'Уменьшить', onclick: zoom(-.1) }, 'A−'),
+    h('button', { class: 'ib sc', title: 'Увеличить', onclick: zoom(.1) }, 'A+'), del);
+  const el = h('div', { class: 'w ' + cls, 'data-id': w.id }, bar, body);
+  if (resizable) {
+    const rs = h('div', { class: 'rs' });
+    rs.addEventListener('pointerdown', e => startDrag(e, w, el, 'resize'));
+    el.append(rs);
+  }
+  place(el, w);
+  el.addEventListener('pointerdown', () => front(w, el), true);
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('input,button,textarea,.dot')) return;
+    startDrag(e, w, el, 'move');
+  });
+  return el;
+}
+function removeWidget(w) {
+  state.widgets = state.widgets.filter(x => x !== w);
+  save(); renderAll();
+}
+function rerender(w, focusId) {
+  const old = board.querySelector(`[data-id="${w.id}"]`);
+  const el = build(w);
+  if (old) old.replaceWith(el); else board.append(el);
+  if (focusId) { const f = el.querySelector(`[data-iid="${focusId}"]`); if (f) f.focus(); }
+}
+
+function itemsUl(items, refresh, withTime) {
+  return h('ul', { class: 'items' }, items.map((it, i) => {
+    const inp = h('input', { value: it.text, placeholder: 'что сделать…', 'data-iid': it.id,
+      oninput: () => { it.text = inp.value; save(); if (withTime) updateClocks(); },
+      onkeydown: e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp._enter(); }
+        else if (e.key === 'Backspace' && !inp.value) { e.preventDefault(); inp._back(); }
+      } });
+    inp._enter = () => { const n = { id: uid(), text: '', done: false }; items.splice(i + 1, 0, n); save(); refresh(n.id); };
+    inp._back = () => { items.splice(i, 1); save(); refresh(items[i - 1] && items[i - 1].id); };
+    return h('li', { class: it.done ? 'done' : '' },
+      h('span', { class: 'cb', onclick: () => { it.done = !it.done; save(); refresh(); updateClocks(); } }),
+      withTime ? h('button', { class: 'tchip' + (it.time ? ' set' : ''), title: 'Время',
+        onclick: e => openTimePicker(e.currentTarget, it, () => { refresh(); updateClocks(); }) }, it.time || '🕒') : null,
+      inp,
+      h('button', { class: 'ib x', title: 'Убрать', onclick: () => { items.splice(i, 1); save(); refresh(); } }, '×'));
+  }));
+}
+
+function noteEl(w) {
+  let el;
+  const dots = COLORS.map(c => h('span', { class: 'dot', style: { background: c },
+    onclick: () => { w.color = c; el.style.setProperty('--nc', c); save(); } }));
+  const ta = h('textarea', { value: w.text || '', placeholder: 'Пиши тут…', spellcheck: false,
+    oninput: () => { w.text = ta.value; save(); } });
+  el = frame(w, 'note', h('span', { class: 'dots' }, dots), ta, true);
+  el.style.setProperty('--nc', w.color);
+  return el;
+}
+
+function listEl(w) {
+  const title = h('input', { class: 'title', value: w.title || '', placeholder: 'Чек-лист',
+    oninput: () => { w.title = title.value; save(); } });
+  const done = w.items.filter(i => i.done).length, total = w.items.length;
+  const refresh = id => rerender(w, id);
+  const body = h('div', { class: 'body' },
+    h('div', { class: 'prog' }, h('i', { style: { width: (total ? done / total * 100 : 0) + '%' } })),
+    itemsUl(w.items, refresh),
+    h('button', { class: 'add', onclick: () => { const n = { id: uid(), text: '', done: false }; w.items.push(n); save(); refresh(n.id); } }, '+ пункт'));
+  return frame(w, 'list panel', [title, h('span', { class: 'cnt' }, done + '/' + total)], body, true);
+}
+
+let view = null; // first day of displayed month
+function calEl(w) {
+  const today = dkey(new Date());
+  const sel = state.sel || today;
+  const [Y, M, D] = sel.split('-').map(Number);
+  if (!view) view = new Date(Y, M - 1, 1);
+  const refresh = id => rerender(w, id);
+  const start = new Date(view.getFullYear(), view.getMonth(), 1);
+  start.setDate(1 - (start.getDay() + 6) % 7);
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const k = dkey(d), ev = state.events[k] || [];
+    const cls = ['day'];
+    if (d.getMonth() !== view.getMonth()) cls.push('out');
+    if (k === today) cls.push('today');
+    if (k === sel) cls.push('sel');
+    if (ev.length) cls.push('has', ev.every(e => e.done) ? 'alldone' : '');
+    cells.push(h('div', { class: cls.join(' '), onclick: () => {
+      state.sel = k;
+      if (d.getMonth() !== view.getMonth()) view = new Date(d.getFullYear(), d.getMonth(), 1);
+      save(); refresh();
+    } }, d.getDate()));
+  }
+  const nav = dir => () => { view = new Date(view.getFullYear(), view.getMonth() + dir, 1); refresh(); };
+  const evs = state.events[sel] || (state.events[sel] = []);
+  const wd = WD_FULL[(new Date(Y, M - 1, D).getDay() + 6) % 7];
+  const body = h('div', { class: 'body' },
+    h('div', { class: 'mhead' },
+      h('button', { class: 'ib', onclick: nav(-1) }, '‹'),
+      h('span', {}, MONTHS[view.getMonth()] + ' ' + view.getFullYear()),
+      h('button', { class: 'ib', onclick: nav(1) }, '›')),
+    h('div', { class: 'grid' }, WDS.map(x => h('div', { class: 'wd' }, x)), cells),
+    h('div', { class: 'dlabel' }, (sel === today ? 'Сегодня, ' : '') + D + ' ' + MONTHS_GEN[M - 1] + ', ' + wd),
+    itemsUl(evs, refresh, true),
+    h('button', { class: 'add', onclick: () => { const n = { id: uid(), text: '', done: false }; evs.push(n); save(); refresh(n.id); } }, '+ дело на этот день'));
+  const todayBtn = h('button', { class: 'ib', style: { fontSize: '12px' },
+    onclick: () => { state.sel = today; view = null; save(); refresh(); } }, 'сегодня');
+  return frame(w, 'cal panel', [h('span', { class: 'ttl' }, 'Календарь'), todayBtn], body, false);
+}
+
+function clockEl(w) {
+  const body = h('div', { class: 'body' }, h('div', { class: 't' }), h('div', { class: 'd' }), h('div', { class: 'nx' }));
+  const el = frame(w, 'clock', [], body, false);
+  fillClock(el);
+  return el;
+}
+
+/* upcoming calendar events, nearest first */
+function upcoming(now) {
+  const today = dkey(now), out = [];
+  for (const k in state.events) {
+    if (k < today) continue;
+    const [Y, M, D] = k.split('-').map(Number);
+    for (const e of state.events[k]) {
+      if (e.done || !e.text.trim()) continue;
+      if (e.time) {
+        const [hh, mm] = e.time.split(':').map(Number);
+        const at = new Date(Y, M - 1, D, hh, mm);
+        if (at > now) out.push({ e, at, day: k, timed: true });
+      } else out.push({ e, at: new Date(Y, M - 1, D), day: k, timed: false });
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+function dayWord(k, now) {
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [Y, M, D] = k.split('-').map(Number);
+  const diff = Math.round((new Date(Y, M - 1, D) - t) / 864e5);
+  if (diff === 0) return 'сегодня';
+  if (diff === 1) return 'завтра';
+  if (diff === 2) return 'послезавтра';
+  return D + ' ' + MONTHS_GEN[M - 1];
+}
+function plural(n, a, b, c) { n = Math.abs(n) % 100; const d = n % 10; return n > 10 && n < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; }
+function countdown(x, now) {
+  if (!x.timed) {
+    const days = Math.round((x.at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 864e5);
+    return days === 0 ? 'сегодня' : days === 1 ? 'завтра' : 'через ' + days + ' ' + plural(days, 'день', 'дня', 'дней');
+  }
+  const m = Math.ceil((x.at - now) / 6e4);
+  if (m <= 1) return 'меньше минуты';
+  const d = Math.floor(m / 1440), hh = Math.floor(m % 1440 / 60), mm = m % 60;
+  if (d) return 'через ' + d + ' д ' + hh + ' ч';
+  if (hh) return 'через ' + hh + ' ч ' + pad(mm) + ' мин';
+  return 'через ' + mm + ' мин';
+}
+function fillClock(el) {
+  const n = new Date();
+  el.querySelector('.t').innerHTML = pad(n.getHours()) + ':' + pad(n.getMinutes()) + '<small>' + pad(n.getSeconds()) + '</small>';
+  el.querySelector('.d').textContent = WD_FULL[(n.getDay() + 6) % 7] + ', ' + n.getDate() + ' ' + MONTHS_GEN[n.getMonth()] + ' ' + n.getFullYear();
+  const nx = el.querySelector('.nx'), list = upcoming(n);
+  nx.innerHTML = '';
+  if (!list.length) { nx.append(h('div', { class: 'lbl' }, 'Ближайшее'), h('div', { class: 'empty' }, 'В календаре ничего не запланировано')); return; }
+  const [a, ...rest] = list;
+  const when = x => dayWord(x.day, n) + (x.timed ? ' в ' + x.e.time : ', весь день');
+  nx.append(
+    h('div', { class: 'lbl' }, 'Ближайшее'),
+    h('div', { class: 'cd' }, countdown(a, n)),
+    h('div', { class: 'what' }, a.e.text),
+    h('div', { class: 'when' }, when(a)),
+    rest.length ? h('div', { class: 'more' }, rest.slice(0, 3).map(x => h('div', {}, h('b', {}, x.timed ? dayWord(x.day, n) + ' ' + x.e.time : dayWord(x.day, n)), x.e.text))) : null);
+}
+function updateClocks() { board.querySelectorAll('.w.clock').forEach(fillClock); }
+
+/* ---------- time picker ---------- */
+const pop = $('#pop');
+function openTimePicker(anchor, it, done) {
+  let [hh, mm] = it.time ? it.time.split(':') : [null, '00'];
+  const close = () => { pop.classList.remove('show'); removeEventListener('pointerdown', outside, true); done(); };
+  const outside = e => { if (!pop.contains(e.target)) close(); };
+  const set = () => { if (hh != null) it.time = hh + ':' + mm; save(); draw(); };
+  const draw = () => {
+    pop.innerHTML = '';
+    pop.append(
+      h('div', { class: 'lbl' }, 'Час'),
+      h('div', { class: 'g', style: { gridTemplateColumns: 'repeat(6,1fr)' } },
+        Array.from({ length: 24 }, (_, i) => pad(i)).map(x => h('button', { class: x === hh ? 'on' : '', onclick: () => { hh = x; set(); } }, x))),
+      h('div', { class: 'lbl' }, 'Минуты'),
+      h('div', { class: 'g', style: { gridTemplateColumns: 'repeat(6,1fr)' } },
+        Array.from({ length: 12 }, (_, i) => pad(i * 5)).map(x => h('button', { class: x === mm ? 'on' : '', onclick: () => { mm = x; if (hh == null) hh = pad(new Date().getHours()); set(); } }, x))),
+      h('div', { class: 'row' },
+        h('button', { onclick: () => { delete it.time; save(); close(); } }, 'Без времени'),
+        h('button', { onclick: close }, 'Готово')));
+  };
+  draw();
+  pop.classList.add('show');
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = clamp(r.left, 8, innerWidth - pop.offsetWidth - 8) + 'px';
+  pop.style.top = (r.bottom + 6 + pop.offsetHeight < innerHeight ? r.bottom + 6 : Math.max(8, r.top - pop.offsetHeight - 6)) + 'px';
+  setTimeout(() => addEventListener('pointerdown', outside, true));
+}
+
+function build(w) {
+  return w.type === 'note' ? noteEl(w) : w.type === 'list' ? listEl(w) : w.type === 'clock' ? clockEl(w) : calEl(w);
+}
+function renderAll() {
+  board.innerHTML = '';
+  for (const w of state.widgets) {
+    board.append(build(w));
+  }
+  renderToolbar();
+}
+function spawnPos(wd) {
+  return { x: Math.round(innerWidth / 2 - wd / 2 + (Math.random() - .5) * 240),
+           y: Math.round(innerHeight / 2 - 160 + (Math.random() - .5) * 160) };
+}
+function addWidget(w) { w.z = ++state.z; state.widgets.push(w); save(); board.append(build(w)); renderToolbar(); }
+
+/* ---------- toolbar ---------- */
+function renderToolbar() {
+  const hasCal = state.widgets.some(w => w.type === 'cal'), hasClock = state.widgets.some(w => w.type === 'clock');
+  tb.innerHTML = '';
+  tb.append(...[
+    h('button', { onclick: () => {
+      const n = state.widgets.filter(w => w.type === 'note').length;
+      addWidget({ id: uid(), type: 'note', w: 240, h: 220, color: COLORS[n % COLORS.length], text: '', ...spawnPos(240) });
+    } }, '🗒 Листик'),
+    h('button', { onclick: () => addWidget({ id: uid(), type: 'list', w: 300, title: '', items: [{ id: uid(), text: '', done: false }], ...spawnPos(300) }) }, '☑ Чек-лист'),
+    hasClock ? null : h('button', { onclick: () => addWidget({ id: uid(), type: 'clock', w: 380, ...spawnPos(380) }) }, '🕒 Часы'),
+    hasCal ? null : h('button', { onclick: () => addWidget({ id: uid(), type: 'cal', w: 350, ...spawnPos(350) }) }, '📅 Календарь'),
+    h('button', { class: state.osk ? 'on' : '', title: 'Экранная клавиатура при вводе', onclick: () => {
+      state.osk = !state.osk; save(); renderToolbar(); updateOsk();
+    } }, '⌨ Клавиатура'),
+    kbLinked ? h('span', { title: 'Физическая клавиатура подключена (kbhelper)', style: { alignSelf: 'center', padding: '0 8px', color: 'var(--ok)', fontSize: '12px' } }, '● клавиатура ПК') : null].filter(Boolean));
+}
+
+/* ---------- on-screen keyboard ---------- */
+const LAYOUTS = {
+  ru: ['ё1234567890-', 'йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю.,'],
+  en: ['`1234567890-', 'qwertyuiop[]', "asdfghjkl;'", 'zxcvbnm,./'],
+  sym: ['1234567890', '!@#№$%&*()', '-_=+:;"\'/\\', '<>[]{}?!.,']
+};
+let lang = 'ru', baseLang = 'ru', shift = false, target = null;
+const tgt = () => (target && document.contains(target) ? target : null);
+function emit(t) { t.dispatchEvent(new Event('input')); }
+function typeText(s) {
+  const t = tgt(); if (!t) return;
+  t.setRangeText(s, t.selectionStart, t.selectionEnd, 'end'); emit(t);
+}
+function backspace() {
+  const t = tgt(); if (!t) return;
+  if (!t.value && t._back) return t._back();
+  let a = t.selectionStart, b = t.selectionEnd;
+  if (a === b) { if (!a) return; a--; }
+  t.setRangeText('', a, b, 'end'); emit(t);
+}
+function enter() {
+  const t = tgt(); if (!t) return;
+  if (t.tagName === 'TEXTAREA') typeText('\n');
+  else if (t._enter) t._enter();
+  else t.blur();
+}
+function moveCaret(d) {
+  const t = tgt(); if (!t) return;
+  const p = clamp(t.selectionStart + d, 0, t.value.length); t.setSelectionRange(p, p);
+}
+function key(label, fn, cls = '') {
+  return h('button', { class: 'k ' + cls, onpointerdown: e => { e.preventDefault(); fn(); } }, label);
+}
+function buildOsk() {
+  osk.innerHTML = '';
+  LAYOUTS[lang].forEach((r, ri) => {
+    const row = h('div', { class: 'krow' });
+    if (ri === 3 && lang !== 'sym') row.append(key('⇧', () => { shift = !shift; buildOsk(); }, 'wide' + (shift ? ' on' : '')));
+    for (const c of r) {
+      const ch = shift ? c.toUpperCase() : c;
+      row.append(key(ch, () => { typeText(ch); if (shift) { shift = false; buildOsk(); } }));
+    }
+    if (ri === 0) row.append(key('⌫', backspace, 'wide'));
+    if (ri === 2) row.append(key('↵', enter, 'wide'));
+    osk.append(row);
+  });
+  osk.append(h('div', { class: 'krow' },
+    key(lang === 'sym' ? 'АБВ' : '?123', () => { lang = lang === 'sym' ? baseLang : 'sym'; buildOsk(); }, 'wide'),
+    key(baseLang === 'ru' ? 'RU' : 'EN', () => { baseLang = lang = baseLang === 'ru' ? 'en' : 'ru'; buildOsk(); }, 'wide'),
+    key('', () => typeText(' '), 'space'),
+    key('←', () => moveCaret(-1)), key('→', () => moveCaret(1)),
+    key('✕', () => { const t = tgt(); if (t) t.blur(); }, 'wide')));
+}
+osk.addEventListener('mousedown', e => e.preventDefault());
+const editing = () => { const a = document.activeElement; return !!a && a.matches('input,textarea'); };
+function updateOsk() {
+  osk.classList.toggle('show', !!state.osk && !kbLinked && editing());
+}
+document.addEventListener('focusin', e => { if (e.target.matches('input,textarea')) target = e.target; updateOsk(); kbFocus(); });
+document.addEventListener('focusout', () => setTimeout(() => { updateOsk(); kbFocus(); }, 0));
+
+/* ---------- physical keyboard via kbhelper.pyw (Wallpaper Engine doesn't pass keys to web wallpapers) ---------- */
+let kb = null, kbLinked = false;
+function kbFocus() { if (kbLinked) try { kb.send(JSON.stringify({ focus: editing() })); } catch (e) {} }
+function kbConnect() {
+  if (!window.KB_TOKEN) { // token file appears after the helper's first run
+    const sc = h('script', { src: 'kb-token.js?' + Date.now() });
+    sc.onload = sc.onerror = () => { sc.remove(); setTimeout(kbConnect, window.KB_TOKEN ? 0 : 5000); };
+    document.head.append(sc);
+    return;
+  }
+  let ws;
+  try { ws = new WebSocket('ws://127.0.0.1:47811/?t=' + window.KB_TOKEN); } catch (e) { return setTimeout(kbConnect, 5000); }
+  ws.onopen = () => { kb = ws; kbLinked = true; kbFocus(); updateOsk(); renderToolbar(); };
+  ws.onclose = () => { if (kb === ws) { kb = null; kbLinked = false; updateOsk(); renderToolbar(); } setTimeout(kbConnect, 3000); };
+  ws.onmessage = e => { try { kbHandle(JSON.parse(e.data)); } catch (err) {} };
+}
+const prevNL = (v, i) => (i < 0 ? -1 : v.lastIndexOf('\n', i));
+function lineEdge(t, end) {
+  const v = t.value, p = t.selectionStart;
+  return end ? (v.indexOf('\n', p) + 1 || v.length + 1) - 1 : prevNL(v, p - 1) + 1;
+}
+function moveLine(t, dir) {
+  const v = t.value, p = t.selectionStart, ls = prevNL(v, p - 1) + 1, col = p - ls;
+  let np;
+  if (dir < 0) { if (!ls) return; const ps = prevNL(v, ls - 2) + 1; np = Math.min(ps + col, ls - 1); }
+  else { const le = v.indexOf('\n', p); if (le < 0) return; const ne = v.indexOf('\n', le + 1); np = Math.min(le + 1 + col, ne < 0 ? v.length : ne); }
+  t.setSelectionRange(np, np);
+}
+function kbHandle(m) {
+  const t = tgt(); if (!t) return;
+  if (m.t === 'text') return typeText(m.v);
+  switch (m.k) {
+    case 'Backspace': return backspace();
+    case 'Enter': return enter();
+    case 'Escape': return t.blur();
+    case 'Left': return moveCaret(-1);
+    case 'Right': return moveCaret(1);
+    case 'Home': { const p = lineEdge(t, false); return t.setSelectionRange(p, p); }
+    case 'End': { const p = lineEdge(t, true); return t.setSelectionRange(p, p); }
+    case 'Up': case 'Down': if (t.tagName === 'TEXTAREA') moveLine(t, m.k === 'Up' ? -1 : 1); return;
+    case 'Delete': {
+      let a = t.selectionStart, b = t.selectionEnd;
+      if (a === b) { if (b >= t.value.length) return; b++; }
+      t.setRangeText('', a, b, 'start'); emit(t); return;
+    }
+    case 'Tab': return typeText(t.tagName === 'TEXTAREA' ? '    ' : '');
+  }
+}
+
+/* ---------- clock ---------- */
+let lastDay = dkey(new Date());
+setInterval(() => {
+  updateClocks();
+  const d = dkey(new Date());
+  if (d !== lastDay) { // midnight: refresh "today" highlight
+    if (state.sel === lastDay) state.sel = d;
+    lastDay = d; view = null; renderAll();
+  }
+}, 1000);
+
+/* ---------- quick input from the "Быстрая запись" property ----------
+   WE sends the field's value as you type; the same entry is updated live
+   until the field is cleared, then the next text becomes a new entry.
+   "14:30 текст" sets the event time. " / " in a note becomes a line break. */
+let qTarget = 'note';
+function quickInput(raw) {
+  const v = (raw || '').trim(), q = state.quick || (state.quick = { val: '' });
+  if (v === q.val) return; // same value re-sent on wallpaper load
+  q.val = v;
+  if (!v) { q.ref = null; return save(); }
+  const m = v.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/);
+  const time = m && +m[1] < 24 && +m[2] < 60 ? pad(+m[1]) + ':' + m[2] : null, text = time ? m[3] : v;
+  let r = q.ref, w, it;
+  if (r) {
+    w = r.wid && state.widgets.find(x => x.id === r.wid);
+    if (r.kind === 'note') it = w;
+    else if (r.kind === 'list') it = w && w.items.find(x => x.id === r.iid);
+    else it = (state.events[r.day] || []).find(x => x.id === r.iid);
+  }
+  if (!it) {
+    if (qTarget === 'list') {
+      w = state.widgets.filter(x => x.type === 'list').sort((a, b) => b.z - a.z)[0];
+      if (!w) { w = { id: uid(), type: 'list', w: 300, title: 'Входящие', items: [], ...spawnPos(300) }; addWidget(w); }
+      it = { id: uid(), text: '', done: false }; w.items.push(it);
+      r = { kind: 'list', wid: w.id, iid: it.id };
+    } else if (qTarget === 'event') {
+      const day = state.sel || dkey(new Date());
+      it = { id: uid(), text: '', done: false }; (state.events[day] || (state.events[day] = [])).push(it);
+      r = { kind: 'event', day, iid: it.id };
+    } else {
+      const n = state.widgets.filter(x => x.type === 'note').length;
+      it = { id: uid(), type: 'note', w: 240, h: 220, color: COLORS[n % COLORS.length], text: '', ...spawnPos(240) };
+      addWidget(it);
+      r = { kind: 'note', wid: it.id };
+    }
+    q.ref = r;
+  }
+  if (r.kind === 'note') it.text = v.replace(/ \/ /g, '\n');
+  else {
+    it.text = text;
+    if (r.kind === 'event') { if (time) it.time = time; else delete it.time; }
+  }
+  save(); renderAll();
+}
+
+/* ---------- Wallpaper Engine properties ---------- */
+window.wallpaperPropertyListener = {
+  applyUserProperties(p) {
+    if (p.bgimage) {
+      const bg = $('#bg');
+      if (p.bgimage.value) {
+        bg.classList.add('img');
+        bg.style.backgroundImage = 'url("file:///' + decodeURIComponent(p.bgimage.value).replace(/\\/g, '/') + '")';
+      } else { bg.classList.remove('img'); bg.style.backgroundImage = ''; }
+    }
+    if (p.dim) $('#dim').style.opacity = p.dim.value / 100;
+    if (p.uiscale) { G = p.uiscale.value / 100; renderAll(); }
+    if (p.quicktarget) qTarget = p.quicktarget.value;
+    if (p.quicktext) quickInput(p.quicktext.value);
+  }
+};
+
+let rt;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderAll, 200); });
+buildOsk(); renderAll();
+// kbhelper only makes sense for a local copy; hosted (e.g. GitHub Pages) relies on Wallpaper Engine's own keyboard input
+if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) kbConnect();
+</script>
+</body>
+</html>
